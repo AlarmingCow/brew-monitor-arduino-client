@@ -19,3 +19,6 @@ Maybe don't commit that stuff though. TODO: make configurable.
 
 # Hardware
 This is written for an Arduino UNO hooked up to a CC3000 WiFI breakout board or shield. It also requires a OneWire thermometer (currently known to work with the DS18B20 sensor).
+
+# Acknowledgements
+Most of the source code here is mangled from Tony DiCola's [CloudThermometer](https://github.com/tdicola/CloudThermometer), also distributed under the MIT license.
