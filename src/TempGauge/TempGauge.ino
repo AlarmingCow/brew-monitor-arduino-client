@@ -4,7 +4,7 @@
 #include <Wire.h>
 #include <RTClib.h>
 #include <OneWire.h>
-#include <WiFiSettings.h>
+#include "WiFiSettings.h"
 
 // CC3000 configuration
 #define     ADAFRUIT_CC3000_IRQ    3    // MUST be an interrupt pin!
@@ -17,12 +17,10 @@ Adafruit_CC3000 cc3000 = Adafruit_CC3000(ADAFRUIT_CC3000_CS,
                                          ADAFRUIT_CC3000_VBAT,
                                          SPI_CLOCK_DIV2);
 
-// Wireless network configuration
-// Put WiFi Config Here
-
 // Other sketch configuration
-#define     READING_DELAY_SECS     10      // Number of minutes to wait between readings.
-#define     TIMEOUT_MS             15000  // How long to wait (in milliseconds) for a server connection to respond (for both AWS and NTP calls).
+#define     READING_DELAY_SECS     1      // Number of seconds to wait between readings.
+#define     TIMEOUT_MS             15000  // How long to wait (in milliseconds) for a server connection to respond
+#define     WEBSITE                "fremont"
 
 #define MAX_DS1820_SENSORS 1
 byte addr[8];
@@ -96,15 +94,17 @@ void loop(void) {
   // Note: If the sketch will run for more than ~24 hours, you probably want to query the time
   // server again to keep the current time from getting too skewed.
   unsigned long currentTime = lastPolledTime + (millis() - sketchTime);
-  
-  if ((currentTime - lastReading) >= (READING_DELAY_SECS * 1000)) {
-    lastReading = currentTime;
 
-    float currentTemp = readTempF();
-    Serial.println(currentTemp);
+  Serial.print(F("Starting read. Current time: ")); Serial.println(currentTime);
+  lastReading = currentTime;
+
+  float currentTemp = readTempF();
+  Serial.print(F("Current temp: ")); Serial.println(currentTemp);
+
+  dbWrite(currentTime, currentTemp);
   
-    dbWrite(currentTime, currentTemp);
-  }
+  Serial.println(F("\n\rDone writing. Delay till next read.\n\r\n\r"));
+  delay(READING_DELAY_SECS * 1000);
 }
 
 float readTempF() {
@@ -128,7 +128,6 @@ float readTempF() {
   return ((data[1] << 8) + data[0]) * 0.0625;
 }
 
-// Write a temperature reading to the DynamoDB table.
 void dbWrite(unsigned long currentTime, float currentTemp) {
   // Generate time and date strings
   DateTime dt(currentTime);
@@ -136,10 +135,12 @@ void dbWrite(unsigned long currentTime, float currentTemp) {
   char dateTime[17];
   memset(dateTime, 0, 17);
   dateTime8601(dt.year(), dt.month(), dt.day(), dt.hour(), dt.minute(), dt.second(), dateTime);
+  
   // Set date to just the year month and day of the ISO8601 simple date string.
   char date[9];
   memset(date, 0, 9);
   memcpy(date, dateTime, 8);
+  
   // Set currentTimeStr to the string value of the current unix time (seconds since epoch).
   char currentTimeStr[8*sizeof(unsigned long)+1];
   memset(currentTimeStr, 0, 8*sizeof(unsigned long)+1);
@@ -148,6 +149,7 @@ void dbWrite(unsigned long currentTime, float currentTemp) {
   // Generate string for the temperature reading.
   char temp[8*sizeof(unsigned long)+5];
   memset(temp, 0, 8*sizeof(unsigned long)+5);
+  
   // Convert to fixed point string.  Using a proper float to string function
   // like dtostrf takes too much program memory (~1.5kb) to use in this sketch.
   ultoa((unsigned long) currentTemp, temp, 10);
@@ -157,23 +159,32 @@ void dbWrite(unsigned long currentTime, float currentTemp) {
   temp[n+2] = '0' + ((unsigned long) (currentTemp*100)) % 10;
   temp[n+3] = '0' + ((unsigned long) (currentTemp*1000)) % 10;
 
-  // Make request to DynamoDB API.
+  // Resolve server IP address
   uint32_t ip = 0;
+  Serial.print(WEBSITE); Serial.print(F(" I.P. address: "));
   while (ip == 0) {
-    if (!cc3000.getHostByName("fremont", &ip)) {
+    if (!cc3000.getHostByName(WEBSITE, &ip)) {
       Serial.println(F("Couldn't resolve!"));
     }
     delay(500);
   }
+  cc3000.printIPdotsRev(ip);
+  
+  Serial.print(F("\n\rPinging ")); cc3000.printIPdotsRev(ip); Serial.print("...");  
+  int replies = cc3000.ping(ip, 5);
+  Serial.print(replies); Serial.println(F(" replies"));
+  
+  // Send request to Elasticsearch API
   Adafruit_CC3000_Client www = cc3000.connectTCP(ip, 9200);
   if (www.connected()) {
-    
+    Serial.println(F("Connected. Sending reading to Elasticsearch"));
     // Generate string with payload length for use in the signing and request sending.  
     char payloadlen[8*sizeof(unsigned long)+1];
     memset(payloadlen, 0, 8*sizeof(unsigned long)+1);
     ultoa(20+strlen(currentTimeStr)+strlen(temp), payloadlen, 10);
     
     // HTTP Headers
+    Serial.print(F("Sending headers... "));
     www.fastrprint(F("POST /temp_gauge/reading HTTP/1.1\n"));
     www.fastrprint(F("Host: fremont:9200\n"));
     www.fastrprint(F("Content-Length: "));
@@ -181,13 +192,16 @@ void dbWrite(unsigned long currentTime, float currentTemp) {
     www.fastrprint(F("\n"));
     www.fastrprint(F("Content-Type: application/json\n"));
     www.fastrprint(F("\n"));
+    Serial.println("done.");
     
     // Payload
+    Serial.print(F("Sending body... "));
     www.fastrprint(F("{\"time\":")); // Length: 8
     www.fastrprint(currentTimeStr);
     www.fastrprint(F("000,\"temp\":")); // Length: 11
     www.fastrprint(temp);
     www.fastrprint(F("}")); // Length: 1
+    Serial.println(F("done."));
   } else {
     Serial.println(F("Connection failed"));    
     www.close();
@@ -195,8 +209,8 @@ void dbWrite(unsigned long currentTime, float currentTemp) {
   }
   
   // Read data until either the connection is closed, or the idle timeout is reached.
-  Serial.println(F("Elasticsearch response:"));
   unsigned long lastRead = millis();
+  Serial.println(F("Elasticsearch response: "));
   while (www.connected() && (millis() - lastRead < TIMEOUT_MS)) {
     while (www.available()) {
       char c = www.read();
