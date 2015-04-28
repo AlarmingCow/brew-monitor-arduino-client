@@ -1,9 +1,8 @@
 Brew Monitor Arduino Client
 ===========================
 
-This is the Arduino client for Brew Monitor. It's WiFi enabled and periodically 
-sends updates from a digital temperature probe to a server over a RESTful web 
-interface.
+This is the Arduino client for [Brew Monitor](https://github.com/AlarmingCow/brew-monitor). It's WiFi enabled and periodically
+sends updates from a digital temperature probe to a server over a RESTful web interface.
 
 # Usage
 Deploy using the [Arduino IDE](http://arduino.cc/en/main/software).
