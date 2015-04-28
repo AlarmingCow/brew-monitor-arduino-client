@@ -12,8 +12,8 @@
 #define     ADAFRUIT_CC3000_CS     10
 // Use hardware SPI for the remaining pins
 // On an UNO, SCK = 13, MISO = 12, and MOSI = 11
-Adafruit_CC3000 cc3000 = Adafruit_CC3000(ADAFRUIT_CC3000_CS, 
-                                         ADAFRUIT_CC3000_IRQ, 
+Adafruit_CC3000 cc3000 = Adafruit_CC3000(ADAFRUIT_CC3000_CS,
+                                         ADAFRUIT_CC3000_IRQ,
                                          ADAFRUIT_CC3000_VBAT,
                                          SPI_CLOCK_DIV2);
 
@@ -33,7 +33,7 @@ unsigned long lastReading = 0;      // Time of last temperature reading.
 
 void setup(void) {
   Serial.begin(115200);
-  
+
   // Initialize and connect to the wireless network
   // This code is adapted from CC3000 example code.
   if (!cc3000.begin()) {
