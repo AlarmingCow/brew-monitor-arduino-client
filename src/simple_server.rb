@@ -1,6 +1,6 @@
 require 'socket' 
 
-server = TCPServer.new 8080
+server = TCPServer.new 9200
 
 loop do
   socket = server.accept

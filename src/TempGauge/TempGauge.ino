@@ -20,7 +20,7 @@ Adafruit_CC3000 cc3000 = Adafruit_CC3000(ADAFRUIT_CC3000_CS,
 // Other sketch configuration
 #define     READING_DELAY_SECS     1      // Number of seconds to wait between readings.
 #define     TIMEOUT_MS             15000  // How long to wait (in milliseconds) for a server connection to respond
-#define     WEBSITE                "fremont"
+#define     SERVER                "fremont"
 
 #define MAX_DS1820_SENSORS 1
 byte addr[8];
@@ -37,7 +37,7 @@ void setup(void) {
   // Initialize and connect to the wireless network
   // This code is adapted from CC3000 example code.
   if (!cc3000.begin()) {
-    Serial.println(F("Unable to initialise the CC3000!"));
+    Serial.println(F("Unable to initialize the CC3000!"));
     while(1);
   }
   if (!cc3000.connectToAP(WLAN_SSID, WLAN_PASS, WLAN_SECURITY)) {
@@ -130,95 +130,84 @@ float readTempF() {
 
 void dbWrite(unsigned long currentTime, float currentTemp) {
   // Generate time and date strings
-  DateTime dt(currentTime);
+//  DateTime dt(currentTime);
   // Set dateTime to the ISO8601 simple date format string.
-  char dateTime[17];
-  memset(dateTime, 0, 17);
-  dateTime8601(dt.year(), dt.month(), dt.day(), dt.hour(), dt.minute(), dt.second(), dateTime);
+//  char dateTime[17];
+//  memset(dateTime, 0, 17);
+//  dateTime8601(dt.year(), dt.month(), dt.day(), dt.hour(), dt.minute(), dt.second(), dateTime);
   
   // Set date to just the year month and day of the ISO8601 simple date string.
-  char date[9];
-  memset(date, 0, 9);
-  memcpy(date, dateTime, 8);
+//  char date[9];
+//  memset(date, 0, 9);
+//  memcpy(date, dateTime, 8);
   
   // Set currentTimeStr to the string value of the current unix time (seconds since epoch).
-  char currentTimeStr[8*sizeof(unsigned long)+1];
-  memset(currentTimeStr, 0, 8*sizeof(unsigned long)+1);
-  ultoa(currentTime, currentTimeStr, 10);
+  char currentTimeStr[11]; // 32-bit int + null
+  sprintf(currentTimeStr, "%ld", currentTime); // Format unsigned long as decimal
 
   // Generate string for the temperature reading.
-  char temp[8*sizeof(unsigned long)+5];
-  memset(temp, 0, 8*sizeof(unsigned long)+5);
+//  char temp[8*sizeof(unsigned long)+5];
+//  memset(temp, 0, 8*sizeof(unsigned long)+5);
   
   // Convert to fixed point string.  Using a proper float to string function
   // like dtostrf takes too much program memory (~1.5kb) to use in this sketch.
-  ultoa((unsigned long) currentTemp, temp, 10);
-  int n = strlen(temp);
-  temp[n] = '.';
-  temp[n+1] = '0' + ((unsigned long) (currentTemp*10)) % 10;
-  temp[n+2] = '0' + ((unsigned long) (currentTemp*100)) % 10;
-  temp[n+3] = '0' + ((unsigned long) (currentTemp*1000)) % 10;
+//  ultoa((unsigned long) currentTemp, temp, 10);
+//  int n = strlen(temp);
+//  temp[n] = '.';
+//  temp[n+1] = '0' + ((unsigned long) (currentTemp*10)) % 10;
+//  temp[n+2] = '0' + ((unsigned long) (currentTemp*100)) % 10;
+//  temp[n+3] = '0' + ((unsigned long) (currentTemp*1000)) % 10;
 
   // Resolve server IP address
+  Serial.print(SERVER); 
   uint32_t ip = 0;
-  Serial.print(WEBSITE); Serial.print(F(" I.P. address: "));
+  Serial.print(F(" I.P. address: "));
   while (ip == 0) {
-    if (!cc3000.getHostByName(WEBSITE, &ip)) {
+    if (!cc3000.getHostByName(SERVER, &ip)) {
       Serial.println(F("Couldn't resolve!"));
     }
     delay(500);
   }
   cc3000.printIPdotsRev(ip);
+  Serial.println("");
   
-  Serial.print(F("\n\rPinging ")); cc3000.printIPdotsRev(ip); Serial.print("...");  
-  int replies = cc3000.ping(ip, 5);
-  Serial.print(replies); Serial.println(F(" replies"));
-  
-  // Send request to Elasticsearch API
-  Adafruit_CC3000_Client www = cc3000.connectTCP(ip, 9200);
-  if (www.connected()) {
-    Serial.println(F("Connected. Sending reading to Elasticsearch"));
-    // Generate string with payload length for use in the signing and request sending.  
-    char payloadlen[8*sizeof(unsigned long)+1];
-    memset(payloadlen, 0, 8*sizeof(unsigned long)+1);
-    ultoa(20+strlen(currentTimeStr)+strlen(temp), payloadlen, 10);
+  Serial.print(F("Opening TCP connection... "));
+  Adafruit_CC3000_Client client = cc3000.connectTCP(ip, 9200);
+  if (client.connected()) {
+    Serial.println(F("done."));
     
-    // HTTP Headers
-    Serial.print(F("Sending headers... "));
-    www.fastrprint(F("POST /temp_gauge/reading HTTP/1.1\n"));
-    www.fastrprint(F("Host: fremont:9200\n"));
-    www.fastrprint(F("Content-Length: "));
-    www.fastrprint(payloadlen);
-    www.fastrprint(F("\n"));
-    www.fastrprint(F("Content-Type: application/json\n"));
-    www.fastrprint(F("\n"));
-    Serial.println("done.");
+    String body = F("{\"time\":0,\"temp\":20}");
+    String request = F("POST /temp_gauge/reading HTTP/1.1\r\n"
+    "Host: fremont:9200\r\n"
+    "Content-Length: ");
+    request += body.length();
+    request += "\r\n\r\n";
     
-    // Payload
-    Serial.print(F("Sending body... "));
-    www.fastrprint(F("{\"time\":")); // Length: 8
-    www.fastrprint(currentTimeStr);
-    www.fastrprint(F("000,\"temp\":")); // Length: 11
-    www.fastrprint(temp);
-    www.fastrprint(F("}")); // Length: 1
+    request += body;
+    
+    Serial.println(F("Request:"));
+    Serial.println(request.c_str());
+    
+    Serial.print(F("Sending request... "));
+    client.fastrprint(request.c_str());
     Serial.println(F("done."));
   } else {
     Serial.println(F("Connection failed"));    
-    www.close();
+    client.close();
     return;
   }
   
   // Read data until either the connection is closed, or the idle timeout is reached.
   unsigned long lastRead = millis();
   Serial.println(F("Elasticsearch response: "));
-  while (www.connected() && (millis() - lastRead < TIMEOUT_MS)) {
-    while (www.available()) {
-      char c = www.read();
+  while (client.connected() && (millis() - lastRead < TIMEOUT_MS)) {
+    while (client.available()) {
+      char c = client.read();
       Serial.print(c);
       lastRead = millis();
     }
   }
-  www.close();
+  client.close();
 }
 
 
