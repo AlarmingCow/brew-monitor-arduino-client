@@ -18,7 +18,7 @@ Adafruit_CC3000 cc3000 = Adafruit_CC3000(ADAFRUIT_CC3000_CS,
                                          SPI_CLOCK_DIV2);
 
 // Other sketch configuration
-#define     READING_DELAY_SECS     1      // Number of seconds to wait between readings.
+#define     READING_DELAY_SECS     10     // Number of seconds to wait between readings.
 #define     TIMEOUT_MS             15000  // How long to wait (in milliseconds) for a server connection to respond
 #define     SERVER                "fremont"
 
@@ -27,8 +27,8 @@ byte addr[8];
 OneWire ds(8);  // on pin 8
 
 // State used to keep track of the current time and time since last temp reading.
-unsigned long lastPolledTime = 0;   // Last value retrieved from time server
-unsigned long sketchTime = 0;       // CPU milliseconds since last server query
+unsigned long unixTimeAtStart = 0;   // Last value retrieved from time server
+unsigned long sketchTimeAtStartMillis = 0;       // CPU milliseconds since last server query
 unsigned long lastReading = 0;      // Time of last temperature reading.
 
 void setup(void) {
@@ -56,8 +56,8 @@ void setup(void) {
     delay(60*1000);
     t = getTime();
   }
-  lastPolledTime = t;
-  sketchTime = millis();
+  unixTimeAtStart = t;
+  sketchTimeAtStartMillis = millis();
   
   if (!ds.search(addr))  {
     ds.reset_search();
@@ -93,7 +93,7 @@ void loop(void) {
   // Update the current time.
   // Note: If the sketch will run for more than ~24 hours, you probably want to query the time
   // server again to keep the current time from getting too skewed.
-  unsigned long currentTime = lastPolledTime + (millis() - sketchTime);
+  unsigned long currentTime = unixTimeAtStart + (millis() - sketchTimeAtStartMillis)/1000;
 
   Serial.print(F("Starting read. Current time: ")); Serial.println(currentTime);
   lastReading = currentTime;
@@ -129,35 +129,6 @@ float readTempF() {
 }
 
 void dbWrite(unsigned long currentTime, float currentTemp) {
-  // Generate time and date strings
-//  DateTime dt(currentTime);
-  // Set dateTime to the ISO8601 simple date format string.
-//  char dateTime[17];
-//  memset(dateTime, 0, 17);
-//  dateTime8601(dt.year(), dt.month(), dt.day(), dt.hour(), dt.minute(), dt.second(), dateTime);
-  
-  // Set date to just the year month and day of the ISO8601 simple date string.
-//  char date[9];
-//  memset(date, 0, 9);
-//  memcpy(date, dateTime, 8);
-  
-  // Set currentTimeStr to the string value of the current unix time (seconds since epoch).
-  char currentTimeStr[11]; // 32-bit int + null
-  sprintf(currentTimeStr, "%ld", currentTime); // Format unsigned long as decimal
-
-  // Generate string for the temperature reading.
-//  char temp[8*sizeof(unsigned long)+5];
-//  memset(temp, 0, 8*sizeof(unsigned long)+5);
-  
-  // Convert to fixed point string.  Using a proper float to string function
-  // like dtostrf takes too much program memory (~1.5kb) to use in this sketch.
-//  ultoa((unsigned long) currentTemp, temp, 10);
-//  int n = strlen(temp);
-//  temp[n] = '.';
-//  temp[n+1] = '0' + ((unsigned long) (currentTemp*10)) % 10;
-//  temp[n+2] = '0' + ((unsigned long) (currentTemp*100)) % 10;
-//  temp[n+3] = '0' + ((unsigned long) (currentTemp*1000)) % 10;
-
   // Resolve server IP address
   Serial.print(SERVER); 
   uint32_t ip = 0;
@@ -176,20 +147,25 @@ void dbWrite(unsigned long currentTime, float currentTemp) {
   if (client.connected()) {
     Serial.println(F("done."));
     
-    String body = F("{\"time\":0,\"temp\":20}");
-    String request = F("POST /temp_gauge/reading HTTP/1.1\r\n"
+    String body = F("{\"time\":");
+    body += currentTime;
+    body += F("000,\"temp\":"); // currentTime is in seconds, need milliseconds
+    body += currentTemp;
+    body += F("}");
+    
+    String head = F("POST /temp_gauge/reading HTTP/1.1\r\n"
     "Host: fremont:9200\r\n"
     "Content-Length: ");
-    request += body.length();
-    request += "\r\n\r\n";
-    
-    request += body;
+    head += body.length();
+    head += F("\r\n\r\n");
     
     Serial.println(F("Request:"));
-    Serial.println(request.c_str());
+    Serial.print(head.c_str());
+    Serial.println(body.c_str());
     
     Serial.print(F("Sending request... "));
-    client.fastrprint(request.c_str());
+    client.fastrprint(head.c_str());
+    client.fastrprint(body.c_str());
     Serial.println(F("done."));
   } else {
     Serial.println(F("Connection failed"));    
@@ -209,8 +185,6 @@ void dbWrite(unsigned long currentTime, float currentTemp) {
   }
   client.close();
 }
-
-
 
 // Convert an array of bytes into a lower case hex string.
 // Buffer MUST be two times the length of the input bytes array!
