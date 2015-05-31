@@ -29,5 +29,5 @@ shield. It also requires a OneWire thermometer (currently known to work with the
 DS18B20 sensor).
 
 # Acknowledgements
-Much of the source code here is mangled from Tony DiCola's [CloudThermometer](https://github.com/tdicola/CloudThermometer), 
+Some of the source code here is mangled from Tony DiCola's [CloudThermometer](https://github.com/tdicola/CloudThermometer), 
 also distributed under the MIT license.
