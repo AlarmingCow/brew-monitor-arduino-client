@@ -21,6 +21,7 @@ Adafruit_CC3000 cc3000 = Adafruit_CC3000(ADAFRUIT_CC3000_CS,
 #define     READING_DELAY_SECS     10     // Number of seconds to wait between readings.
 #define     TIMEOUT_MS             15000  // How long to wait (in milliseconds) for a server connection to respond
 #define     SERVER                "fremont"
+#define     PORT                  8080
 
 #define MAX_DS1820_SENSORS 1
 byte addr[8];
@@ -143,7 +144,7 @@ void dbWrite(unsigned long currentTime, float currentTemp) {
   Serial.println("");
   
   Serial.print(F("Opening TCP connection... "));
-  Adafruit_CC3000_Client client = cc3000.connectTCP(ip, 9200);
+  Adafruit_CC3000_Client client = cc3000.connectTCP(ip, 8080);
   if (client.connected()) {
     Serial.println(F("done."));
     
@@ -153,8 +154,9 @@ void dbWrite(unsigned long currentTime, float currentTemp) {
     body += currentTemp;
     body += F("}");
     
-    String head = F("POST /temp_gauge/reading HTTP/1.1\r\n"
-    "Host: fremont:9200\r\n"
+    String head = F("POST /thermReadings HTTP/1.1\r\n"
+    "Host: fremont:8080\r\n"
+    "Content-Type: application/json\r\n"
     "Content-Length: ");
     head += body.length();
     head += F("\r\n\r\n");
@@ -175,7 +177,7 @@ void dbWrite(unsigned long currentTime, float currentTemp) {
   
   // Read data until either the connection is closed, or the idle timeout is reached.
   unsigned long lastRead = millis();
-  Serial.println(F("Elasticsearch response: "));
+  Serial.println(F("Server response: "));
   while (client.connected() && (millis() - lastRead < TIMEOUT_MS)) {
     while (client.available()) {
       char c = client.read();
